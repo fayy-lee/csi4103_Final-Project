@@ -16,12 +16,19 @@ from sklearn.metrics import (
     silhouette_score
 )
 
+# Configuration
+RANDOM_STATE = 42
+SILHOUETTE_SAMPLE_SIZE = 2000
+
 # Evaluation Metrics
 def calculate_silhouette(X, predicted_labels):
     """
     Calculate the Silhouette Score.
 
     Measures how well-separated the predicted clusters are.
+
+    Uses a reproducible sample of up to 2,000 points
+    to make evaluation practical for larger datasets.
 
     Range:
         -1 to 1
@@ -34,7 +41,12 @@ def calculate_silhouette(X, predicted_labels):
     if n_clusters < 2 or n_clusters >= len(X):
         return float("nan")
 
-    return silhouette_score(X, predicted_labels)
+    return silhouette_score(
+        X,
+        predicted_labels,
+        sample_size=min(SILHOUETTE_SAMPLE_SIZE, len(X)),
+        random_state=RANDOM_STATE
+    )
 
 
 def calculate_ari(true_labels, predicted_labels):
@@ -83,7 +95,7 @@ def evaluate_clustering(
         ),
         "n_clusters": len(set(predicted_labels))
     }
-
+    
 # Example Usage
 if __name__ == "__main__":
 
@@ -100,7 +112,8 @@ if __name__ == "__main__":
 
     model = fit_kmeans(
         X,
-        n_clusters=len(set(y))
+        n_clusters=len(set(y)),
+        random_state=RANDOM_STATE
     )
 
     runtime = perf_counter() - start_time
