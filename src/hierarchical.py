@@ -20,15 +20,15 @@ def fit_hierarchical(
     Parameters:
         X: Feature matrix containing the data points.
         n_clusters: Number of clusters to identify.
-        linkage: Linkage method ('ward' or 'single').
+        linkage: Linkage method ('ward' or 'single' or 'average').
 
     Returns:
         Fitted AgglomerativeClustering model.
     """
 
-    if linkage not in ["ward", "single"]:
+    if linkage not in ["ward", "single", "average"]:
         raise ValueError(
-            "Linkage must be either 'ward' or 'single'."
+            "Linkage must be either 'ward', 'single' or 'average'."
         )
 
     model = AgglomerativeClustering(

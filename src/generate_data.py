@@ -49,6 +49,17 @@ def generate_gaussian_blobs(
 
     return X, y
 
+def generate_anisotropic_blobs(
+    n_samples=DEFAULT_SAMPLES,
+    random_state=RANDOM_STATE,
+):
+    """Generate elongated, tilted Gaussian clusters."""
+    X, y = generate_gaussian_blobs(n_samples, random_state)
+    transform = np.array([
+        [1.0, 0.6],
+        [0.0, 0.3],
+    ])
+    return X @ transform, y
 
 def generate_two_moons(
     n_samples=DEFAULT_SAMPLES,
