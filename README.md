@@ -141,7 +141,8 @@ csi4103_Final-Project/
 │   └── tables/
 │       ├── clustering_results.csv
 │       ├── dataset_size_results.csv
-│       └── separation_results.csv
+│       ├── separation_results.csv
+│       └── cluster_shape_results.csv
 └── src/
     ├── common.py
     ├── generate_data.py
@@ -151,7 +152,6 @@ csi4103_Final-Project/
     ├── run_experiments.py
     ├── plot_size_results.py
     ├── run_shape_experiments.py
-    ├── plot_shape_results.py
     ├── run_separation_experiments.py
     └── plot_separation_results.py
 ```
@@ -208,6 +208,10 @@ Cluster shape:
 ```bash
 python src/run_shape_experiments.py
 ```
+This command generates both Part 2 outputs:
+
+- `results/figures/cluster_shape_comparison.png` compares ground-truth labels, K-Means, and hierarchical clustering with Single, Ward, and Average linkage.
+- `results/tables/cluster_shape_results.csv` contains ARI and silhouette scores for each shape and method.
 
 Cluster separation:
 
@@ -219,7 +223,6 @@ python src/run_separation_experiments.py
 
 ```bash
 python src/plot_size_results.py
-python src/plot_shape_results.py
 python src/plot_separation_results.py
 ```
 
