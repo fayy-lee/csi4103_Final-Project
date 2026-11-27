@@ -23,10 +23,9 @@ Thumbs.db
 data/*.csv
 data/*.npy
 
-# Generated results
-results/figures/*.png
-results/figures/*.pdf
-results/tables/*.csv
+# Note: results/figures and results/tables ARE tracked on purpose, so the
+# report (report/main.tex) and slides (slides/) build without re-running
+# every experiment.
 
 # LaTeX auxiliary files
 *.aux

@@ -1,11 +1,10 @@
-
-\documentclass[12pt,letterpaper]{article}
+\documentclass[11pt,letterpaper]{article}
 
 % --------------------------------------------------
 % Packages
 % --------------------------------------------------
-
 \usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
 \usepackage{graphicx}
 \usepackage{float}
 \usepackage{booktabs}
@@ -15,742 +14,492 @@
 \usepackage{subcaption}
 \usepackage{xcolor}
 \usepackage{setspace}
-\usepackage{multirow}
+\usepackage{enumitem}
+\usepackage{caption}
 
 \hypersetup{
     colorlinks=true,
-    linkcolor=blue,
-    citecolor=blue,
-    urlcolor=blue
+    linkcolor=blue!60!black,
+    citecolor=blue!60!black,
+    urlcolor=blue!60!black
 }
 
-\onehalfspacing
+\captionsetup{font=small,labelfont=bf}
+\setstretch{1.08}
+\setlength{\emergencystretch}{3em}
+\setlist{itemsep=2pt,topsep=4pt}
+
+% Tables are generated from results/tables/*.csv by src/make_report_tables.py
+\newcommand{\gentable}[2][\linewidth]{%
+  \resizebox{#1}{!}{\input{generated/#2}}}
 
 % --------------------------------------------------
-% Document Information
+% Title
 % --------------------------------------------------
-
 \title{
-    \textbf{K-Means vs. Hierarchical Clustering:}\\
-    \large An Empirical Comparison of Efficiency and Clustering Quality
+    \textbf{K-Means vs. Hierarchical Clustering}\\
+    \large When Does Each One Win? An Empirical Comparison of
+    Efficiency and Clustering Quality
 }
 
 \author{
-    Iaroslav Volkov \\
-    Elizabeth Lam \\
-    Fay Lee \\
-    \\
-    \textit{Course: CSI 4103 -- Great Algorithms} \\
+    Iaroslav Volkov \quad Elizabeth Lam \quad Fay Lee \\[4pt]
+    \textit{CSI 4103 -- Great Algorithms, University of Ottawa} \\
     \textit{Professor: Andrej Bogdanov}
 }
 
-\date{December 2026}
-
-% --------------------------------------------------
-% Document
-% --------------------------------------------------
+\date{December 2026\\[2pt]\small Preliminary draft -- to be updated with
+feedback from the in-class presentation}
 
 \begin{document}
 
 \maketitle
 
 \begin{abstract}
-
-Clustering is an important unsupervised learning task that involves
-partitioning data points into groups based on their similarity.
-However, different clustering algorithms make different assumptions
-about the structure of the data, which can affect both their
-computational efficiency and clustering quality.
-
-This project empirically compares K-Means and Hierarchical Clustering
-to investigate how dataset characteristics and dataset size influence
-their performance. We examine K-Means alongside two hierarchical
-linkage strategies: Ward and Single linkage.
-
-Using synthetic datasets, we evaluate the algorithms based on runtime,
-Silhouette Score, and Adjusted Rand Index (ARI). Our experiments
-investigate well-separated clusters, irregular cluster shapes,
-overlapping clusters, and clusters of varying sizes.
-
-Preliminary results suggest that K-Means is more computationally
-scalable as dataset size increases, while the effectiveness of each
-clustering method depends on the underlying structure of the data.
-We discuss these findings and the trade-offs between computational
-efficiency and clustering quality.
-
+\noindent
+Clustering algorithms make different assumptions about the data, and those
+assumptions decide both how fast they run and whether they find the right
+groups. We compare K-Means with agglomerative hierarchical clustering
+(Ward, Average and Single linkage) on synthetic data where the true
+clusters are known, and we vary three things one at a time: dataset size,
+cluster shape, and cluster separation. Quality is measured with the Adjusted
+Rand Index (ARI) and the Silhouette Score, and cost with wall-clock
+runtime. We find that (i)~K-Means' runtime stays essentially flat from 500
+to 20{,}000 points while hierarchical clustering grows roughly
+quadratically ($\approx n^{1.9}$--$n^{2.1}$) and needs a full pairwise
+distance matrix, but hierarchical clustering is actually faster below about
+1{,}000 points; (ii)~Single linkage is the only method that recovers
+non-convex shapes (ARI $=1$ on two moons and concentric circles, versus
+$\le 0.36$ for the others); and (iii)~as clusters begin to overlap,
+Single linkage fails first (already at centre-distance$/\sigma\approx 6$),
+then Average and Ward, while K-Means tracks the best score any method could
+achieve. We also show that the Silhouette Score can strongly disagree with
+ARI, rewarding degenerate clusterings. No algorithm wins everywhere; the
+right choice depends on the shape, overlap and size of the data.
 \end{abstract}
-
-\newpage
-\tableofcontents
-\newpage
 
 % ==================================================
 \section{Introduction}
 % ==================================================
 
-Clustering is the task of organizing data points into groups such
-that points within the same group are more similar to each other
-than to points in other groups. It is widely used in data analysis
-and unsupervised machine learning, particularly when predefined
-labels are unavailable.
-
-There are several approaches to clustering, each with different
-assumptions about the structure of the data.
-
-K-Means is a partition-based clustering algorithm that assigns
-points to a predefined number of clusters by minimizing the
-within-cluster sum of squared distances. It is relatively simple
-and computationally efficient, but it generally performs best
-when clusters are compact and approximately spherical.
-
-Hierarchical Clustering takes a different approach by building
-a hierarchy of clusters. In this project, we focus on
-agglomerative hierarchical clustering, which starts with individual
-data points and repeatedly merges clusters until the desired
-number of clusters is reached.
-
-The results of hierarchical clustering depend on the linkage
-strategy used to determine the distance between clusters.
-We investigate two strategies:
+Clustering partitions unlabeled points into groups of similar points. It is
+a basic unsupervised-learning task, but there is no single correct notion of
+``similar'', so each algorithm builds in an assumption. Two of the most widely
+used families are:
 
 \begin{itemize}
-    \item \textbf{Ward linkage:} Merges clusters based on the
-    increase in within-cluster variance.
-
-    \item \textbf{Single linkage:} Measures the distance between
-    two clusters using the minimum distance between any pair
-    of points from the respective clusters.
+    \item \textbf{K-Means} \cite{macqueen1967,lloyd1982} alternates between
+    assigning every point to its nearest centroid and moving each centroid to
+    the mean of its points, minimizing the within-cluster sum of squares
+    $J=\sum_{i=1}^{k}\sum_{x\in C_i}\|x-\mu_i\|^2$. Each iteration costs
+    $O(nkd)$, so it is cheap, but it implicitly assumes compact, roughly
+    spherical clusters of similar size.
+    \item \textbf{Agglomerative hierarchical clustering} starts with every
+    point as its own cluster and repeatedly merges the two closest clusters
+    until $k$ remain. ``Closest'' depends on the \emph{linkage}: \textbf{Ward}
+    \cite{ward1963} merges the pair that least increases total within-cluster
+    variance; \textbf{Single} \cite{sneath1957} uses the minimum distance
+    between members; \textbf{Average} \cite{sokal1958} uses the mean pairwise
+    distance. Standard implementations need the pairwise distance matrix, i.e.\
+    $\Theta(n^2)$ memory and roughly $O(n^2)$ or worse time
+    \cite{muellner2011}.
 \end{itemize}
 
-Although these algorithms can produce similar results on some
-datasets, their different assumptions may lead to different
-outcomes when the underlying cluster structure changes.
+Because their assumptions differ, the two families should fail in different
+places. This project maps out where.
 
-\subsection{Research Objectives}
+\subsection{Research Questions and Hypotheses}
 
-The objective of this project is to empirically investigate the
-strengths and limitations of K-Means and Hierarchical Clustering.
+We ask how three properties of the data affect the algorithms:
+\textbf{dataset size}, \textbf{cluster shape}, and \textbf{cluster
+separation}. Our hypotheses, stated before running the experiments, were:
 
-We focus on the following research questions:
-
-\begin{enumerate}
-    \item How do cluster shape, separation, overlap, and size
-    influence clustering quality?
-
-    \item How does computational runtime change as the number
-    of data points increases?
-
-    \item Under what dataset conditions does one clustering
-    algorithm outperform another?
+\begin{enumerate}[label=\textbf{H\arabic*.}]
+    \item K-Means is more computationally efficient on large datasets with
+    well-separated, approximately spherical clusters.
+    \item Hierarchical clustering recovers irregularly shaped (non-convex)
+    clusters better than K-Means, depending on the linkage.
+    \item Hierarchical clustering's time and memory requirements limit its
+    scalability as the dataset grows.
 \end{enumerate}
 
-\subsection{Hypothesis}
+\subsection{Summary of Findings}
 
-We hypothesize that K-Means will generally be more computationally
-efficient on larger datasets, particularly when clusters are
-well-separated and approximately spherical.
-
-We also expect hierarchical clustering to perform better on
-certain irregularly shaped datasets, depending on the linkage
-strategy. In particular, Single linkage may identify non-convex
-clusters that K-Means struggles to recover.
-
-However, we expect the computational cost of hierarchical
-clustering to become a limiting factor as dataset size increases.
-
-% ==================================================
-\section{Background}
-% ==================================================
-
-\subsection{K-Means}
-
-K-Means partitions a dataset into $k$ clusters by assigning each
-point to its nearest cluster centroid.
-
-The algorithm iteratively performs two main steps:
-
-\begin{enumerate}
-    \item \textbf{Assignment:} Assign each point to the nearest
-    cluster centroid.
-
-    \item \textbf{Update:} Recalculate each centroid as the mean
-    of the points assigned to that cluster.
-\end{enumerate}
-
-These steps repeat until the assignments stabilize or a
-stopping condition is reached.
-
-The objective is to minimize the within-cluster sum of squared
-distances:
-
-\[
-J = \sum_{i=1}^{k}
-\sum_{x \in C_i}
-\|x - \mu_i\|^2
-\]
-
-where $C_i$ represents cluster $i$ and $\mu_i$ represents
-its centroid.
-
-K-Means is efficient for many practical datasets, but its
-centroid-based approach can struggle with irregular shapes,
-overlapping clusters, and clusters with substantially different
-sizes or densities.
-
-\subsection{Hierarchical Clustering}
-
-Agglomerative Hierarchical Clustering begins with each data
-point as its own cluster. At each iteration, the two closest
-clusters are merged.
-
-This process continues until the desired number of clusters
-remains.
-
-The definition of distance between clusters depends on the
-linkage method.
-
-\subsubsection{Ward Linkage}
-
-Ward linkage merges the pair of clusters that produces the
-smallest increase in within-cluster variance.
-
-This approach tends to produce compact clusters and is often
-similar in behavior to K-Means.
-
-\subsubsection{Single Linkage}
-
-Single linkage defines the distance between two clusters as
-the minimum distance between any two points belonging to
-different clusters.
-
-This can allow it to identify irregularly shaped clusters.
-However, it can also suffer from the chaining effect, where
-clusters become connected through sequences of nearby points.
+\begin{itemize}
+    \item \textbf{Size (H1, H3: supported, with a caveat).} At 5{,}000 points
+    K-Means takes 0.13\,s versus 0.70\,s (Ward) and 0.80\,s (Average);
+    hierarchical runtime fits $n^{1.9}$--$n^{2.1}$ while K-Means is flat.
+    The caveat: below $\approx$1{,}000 points the hierarchical methods are
+    several times \emph{faster}, because K-Means pays a fixed cost for its 10
+    restarts (Section~\ref{sec:size}).
+    \item \textbf{Shape (H2: supported for Single linkage only).} Single
+    linkage gets ARI\,=\,1 on two moons and concentric circles; K-Means, Ward
+    and Average score between $-0.001$ and $0.36$ (Section~\ref{sec:shape}).
+    \item \textbf{Separation (new).} As clusters overlap, Single linkage breaks
+    first, then Average, then Ward; K-Means stays at the oracle ceiling
+    throughout. Single linkage's failure is caused by outliers, not by overlap
+    (Section~\ref{sec:separation}).
+    \item \textbf{Metrics disagree.} Silhouette ranks K-Means above Single
+    linkage on the shape data, where Single linkage is perfect, and ranks
+    Single linkage \emph{highest} on heavily overlapping data, where it
+    returns one giant cluster plus two lone points (Section~\ref{sec:discussion}).
+\end{itemize}
 
 % ==================================================
 \section{Experimental Methodology}
 % ==================================================
 
-\subsection{Experimental Design}
+\subsection{Algorithms and Metrics}
 
-We implemented the algorithms in Python using the
-Scikit-learn library.
-
-Our experiments compare three algorithm configurations:
+We use scikit-learn \cite{pedregosa2011} (with NumPy \cite{harris2020} and
+SciPy \cite{virtanen2020}). K-Means uses Lloyd's algorithm with k-means++
+seeding \cite{arthur2007}, \texttt{n\_init=10} restarts and at most 300
+iterations. Hierarchical clustering uses \texttt{AgglomerativeClustering}
+with Euclidean distance and Ward, Average or Single linkage. Every method is
+given the true number of clusters $k$, so we measure how well each method
+\emph{finds} the structure, not how well it \emph{guesses} $k$.
 
 \begin{itemize}
-    \item K-Means
-    \item Hierarchical Clustering with Ward linkage
-    \item Hierarchical Clustering with Single linkage
+    \item \textbf{Runtime:} wall-clock time of the fit
+    (\texttt{perf\_counter}); the median of 5 runs in the size experiment.
+    \item \textbf{Adjusted Rand Index (ARI)} \cite{hubert1985}: agreement
+    between predicted and true labels, corrected for chance. 1 is perfect and
+    0 is what random labels give. It uses the ground truth.
+    \item \textbf{Silhouette Score} \cite{rousseeuw1987}: for each point,
+    how much closer it is to its own cluster than to the nearest other
+    cluster, averaged; in $[-1,1]$. It uses \emph{no} labels, so it measures
+    geometric compactness, not correctness. For speed it is computed on a
+    fixed random sample of at most 2{,}000 points.
 \end{itemize}
 
-We use synthetic datasets with known cluster labels. This allows
-us to compare the predicted assignments against the expected
-cluster structure.
+All data are generated with a fixed seed (42), and a shared harness
+(\texttt{run\_experiment} in \texttt{common.py}) returns runtime,
+Silhouette and ARI for any (dataset, algorithm) pair so every experiment
+measures the same way.
 
-All experiments use a fixed random seed of 42 to support
-reproducibility.
+\subsection{Three Experiments}
 
-\subsection{Synthetic Datasets}
+\paragraph{1. Dataset size.} Three Gaussian blobs ($\sigma=0.7$) with
+$n\in\{500,1000,2500,5000,10000,20000\}$. Hierarchical clustering is capped at
+$n=5000$: its condensed distance matrix already takes about 100\,MB there and
+would take about 400\,MB at 10{,}000 and 1.6\,GB at 20{,}000 (stored as 64-bit
+floats; arithmetic, not measured).
 
-We generated five synthetic datasets to investigate how
-different data characteristics influence clustering performance.
+\paragraph{2. Cluster shape.} Six generators (Figure~\ref{fig:datasets}):
+regular blobs (baseline), anisotropic blobs, two moons, concentric circles,
+overlapping blobs and varying-size blobs, each with $n=1000$.
 
-\begin{table}[H]
-\centering
-\caption{Synthetic datasets used in the experiments.}
-\label{tab:datasets}
-\begin{tabular}{ll}
-\toprule
-\textbf{Dataset} & \textbf{Characteristic} \\
-\midrule
-Gaussian Blobs & Well-separated, compact clusters \\
-Two Moons & Irregular, non-convex cluster shapes \\
-Concentric Circles & Nested, non-convex clusters \\
-Overlapping Blobs & Substantial overlap between clusters \\
-Varying-Size Blobs & Clusters with different sizes and densities \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-Each dataset contains 1,000 points for the initial comparison
-between dataset characteristics.
-
-% Dataset overview figure
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.9\textwidth]
-    {../results/figures/dataset_overview.png}
-    \caption{Overview of the five synthetic datasets used
-    in the experiments.}
+    \includegraphics[width=0.82\textwidth]{../results/figures/dataset_overview.png}
+    \caption{The synthetic datasets of the characteristics experiment,
+    coloured by true label (anisotropic blobs are analysed in the shape
+    experiment).}
     \label{fig:datasets}
 \end{figure}
 
-\subsection{Evaluation Metrics}
+\paragraph{3. Cluster separation.} Three equal-size Gaussian clusters whose
+centres are the corners of an equilateral triangle with side $d=6$. The
+common standard deviation $\sigma$ is swept over
+$\{0.5,\allowbreak 0.75,\allowbreak 1,\allowbreak 1.25,\allowbreak 1.5,\allowbreak 2,\allowbreak 2.5,\allowbreak 3,\allowbreak 4,\allowbreak 5\}$, so the \emph{separation ratio}
+$d/\sigma$ falls from 12 (clearly separated) to 1.2 (heavily overlapping).
+Scaling the distance instead of $\sigma$ gives the same geometry, so one
+sweep covers both. Each level is repeated on 10 random datasets
+($n=1000$ each, seeds 42--51) and we report means and standard deviations.
 
-We evaluate clustering performance using runtime,
-Silhouette Score, and Adjusted Rand Index.
-
-\subsubsection{Runtime}
-
-Runtime measures the time required for an algorithm to fit
-the dataset.
-
-We measure the execution time of the clustering algorithm
-using Python's \texttt{perf\_counter} function.
-
-For the initial dataset comparison, we perform five executions
-and report the average runtime.
-
-For the dataset-size experiment, we perform five executions
-and report the median runtime.
-
-\subsubsection{Silhouette Score}
-
-The Silhouette Score measures how similar a point is to its
-own cluster compared with other clusters.
-
-Its value ranges from $-1$ to $1$, where higher values generally
-indicate better-separated clusters.
-
-For larger datasets, we calculate the score using a reproducible
-sample of up to 2,000 points to reduce evaluation time.
-
-\subsubsection{Adjusted Rand Index}
-
-The Adjusted Rand Index (ARI) measures the similarity between
-the predicted cluster assignments and the known ground-truth
-labels.
-
-An ARI of 1 indicates perfect agreement, while a value near
-0 indicates agreement comparable to random assignments.
-
-Unlike the Silhouette Score, ARI uses the known labels and
-therefore allows us to evaluate whether the algorithm recovered
-the intended clusters.
+Because overlapping clusters cannot be separated perfectly by \emph{any}
+method, we add an \textbf{oracle} reference: assign each point to its nearest
+\emph{true} centre. For equal-size, equal-variance spherical Gaussians this is
+the Bayes-optimal rule, so its ARI is the highest score attainable at that
+overlap. We call an algorithm ``failed'' at the first level where its mean ARI
+drops below 0.9 (\emph{absolute}) or below $0.9\times$ the oracle's ARI
+(\emph{relative}); the relative rule separates ``the algorithm got worse'' from
+``the data are ambiguous''.
 
 % ==================================================
-\section{Implementation}
+\section{Results}
 % ==================================================
 
-\subsection{Project Structure}
+\subsection{Dataset Size}
+\label{sec:size}
 
-The project is implemented in Python and organized into
-separate modules for dataset generation, clustering algorithms,
-evaluation, and experimentation.
-
-The main components include:
-
-\begin{itemize}
-    \item \texttt{generate\_data.py}: Generates the synthetic
-    datasets used in the experiments.
-
-    \item \texttt{kmeans.py}: Implements the K-Means
-    clustering configuration.
-
-    \item \texttt{hierarchical.py}: Implements Ward and
-    Single linkage clustering.
-
-    \item \texttt{evaluation.py}: Calculates runtime-related
-    results, Silhouette Score, and ARI.
-
-    \item \texttt{common.py}: Provides a shared experiment
-    harness that executes an algorithm and returns its
-    runtime and clustering quality metrics.
-
-    \item \texttt{run\_experiments.py}: Runs the dataset
-    characteristic and dataset-size experiments.
-
-    \item \texttt{plot\_size\_results.py}: Generates
-    visualizations of runtime and clustering quality
-    as dataset size increases.
-\end{itemize}
-
-\subsection{Shared Experiment Harness}
-
-To ensure consistent evaluation, we implemented a shared
-\texttt{run\_experiment(dataset, algorithm)} function.
-
-The function accepts a dataset containing the feature matrix
-and ground-truth labels, along with an algorithm identifier.
-
-It fits the selected clustering algorithm and returns:
-
-\begin{itemize}
-    \item Runtime in seconds
-    \item Silhouette Score
-    \item Adjusted Rand Index
-\end{itemize}
-
-The number of clusters is determined from the known
-ground-truth labels. A fixed random seed is used for
-reproducibility.
-
-% ==================================================
-\section{Experimental Results}
-% ==================================================
-
-\subsection{Comparison Across Dataset Characteristics}
-
-We first evaluated all three algorithms on the five synthetic
-datasets, each containing 1,000 samples.
-
-Table~\ref{tab:initial-results} summarizes the preliminary
-experimental results.
+Table~\ref{tab:size-runtime} and Figure~\ref{fig:runtime} show runtime. On
+well-separated blobs every method recovers the clusters perfectly at every
+size it was run on (Table~\ref{tab:size-quality}), so size affects only cost.
 
 \begin{table}[H]
 \centering
-\caption{Initial clustering results across five datasets.}
-\label{tab:initial-results}
-\small
-\begin{tabular}{llrr}
-\toprule
-\textbf{Dataset} & \textbf{Algorithm}
-& \textbf{Silhouette} & \textbf{ARI} \\
-\midrule
-
-\multirow{3}{*}{Gaussian Blobs}
-& K-Means & 0.8905 & 1.0000 \\
-& Ward & 0.8905 & 1.0000 \\
-& Single & 0.8905 & 1.0000 \\
-\midrule
-
-\multirow{3}{*}{Two Moons}
-& K-Means & 0.4852 & 0.2433 \\
-& Ward & 0.4837 & 0.2553 \\
-& Single & 0.3300 & 1.0000 \\
-\midrule
-
-\multirow{3}{*}{Concentric Circles}
-& K-Means & 0.3280 & -0.0010 \\
-& Ward & 0.2643 & 0.0103 \\
-& Single & 0.1552 & 1.0000 \\
-\midrule
-
-\multirow{3}{*}{Overlapping Blobs}
-& K-Means & 0.4244 & 0.5987 \\
-& Ward & 0.4017 & 0.5208 \\
-& Single & 0.3593 & 0.0000 \\
-\midrule
-
-\multirow{3}{*}{Varying-Size Blobs}
-& K-Means & 0.6345 & 0.9293 \\
-& Ward & 0.6335 & 0.9915 \\
-& Single & 0.2941 & -0.0013 \\
-
-\bottomrule
-\end{tabular}
-\end{table}
-
-\subsubsection{Preliminary Observations}
-
-Several observations emerge from the initial experiments:
-
-\begin{itemize}
-
-    \item \textbf{Gaussian Blobs:}
-    All three algorithms achieved perfect ARI scores,
-    indicating that they successfully recovered the
-    well-separated clusters.
-
-    \item \textbf{Two Moons:}
-    Single linkage achieved an ARI of 1.0, while
-    K-Means and Ward produced substantially lower scores.
-    This illustrates the advantage of Single linkage when
-    identifying non-convex cluster shapes.
-
-    \item \textbf{Concentric Circles:}
-    Single linkage again achieved perfect ARI, whereas
-    K-Means and Ward struggled to recover the nested
-    cluster structure.
-
-    \item \textbf{Overlapping Blobs:}
-    K-Means achieved the highest ARI, followed by Ward.
-    Single linkage performed poorly on this dataset.
-
-    \item \textbf{Varying-Size Blobs:}
-    Ward achieved the highest ARI, slightly outperforming
-    K-Means. Single linkage did not recover the intended
-    clusters successfully.
-
-\end{itemize}
-
-These results demonstrate that no single algorithm performs
-best across every dataset characteristic.
-
-\subsection{Effect of Dataset Size}
-
-To investigate scalability, we generated Gaussian blob datasets
-with increasing numbers of samples:
-
-\[
-n \in \{500, 1000, 2500, 5000, 10000, 20000\}
-\]
-
-Each algorithm was evaluated using five repeated executions,
-with median runtime reported.
-
-K-Means was evaluated at every dataset size. Due to the
-memory requirements of hierarchical clustering, Ward and
-Single linkage were evaluated only up to 5,000 samples.
-
-\subsubsection{Runtime Results}
-
-Table~\ref{tab:size-runtime} presents the measured median
-runtime in seconds.
-
-\begin{table}[H]
-\centering
-\caption{Median runtime by dataset size (seconds).}
+\caption{Median runtime (seconds) by dataset size; fastest in bold.
+``--'': hierarchical methods not run above 5{,}000 points.}
 \label{tab:size-runtime}
-\begin{tabular}{rrrr}
-\toprule
-\textbf{Samples} & \textbf{K-Means}
-& \textbf{Ward} & \textbf{Single} \\
-\midrule
-500    & 0.038910 & 0.008827 & 0.005023 \\
-1,000  & 0.021430 & 0.032645 & 0.010787 \\
-2,500  & 0.021738 & 0.251912 & 0.089808 \\
-5,000  & 0.036179 & 0.928655 & 0.197543 \\
-10,000 & 0.037967 & -- & -- \\
-20,000 & 0.054852 & -- & -- \\
-\bottomrule
-\end{tabular}
+\gentable[0.62\linewidth]{size_runtime.tex}
 \end{table}
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.95\textwidth]
-    {../results/figures/runtime_vs_size.png}
-    \caption{Runtime comparison as the number of samples
-    increases. Both axes use logarithmic scales.}
+    \includegraphics[width=0.78\textwidth]{../results/figures/runtime_vs_size.png}
+    \caption{Runtime versus $n$ (log--log). K-Means is flat; the hierarchical
+    curves are straight lines of slope close to 2 once $n\geq 1000$.}
     \label{fig:runtime}
 \end{figure}
 
-The results show that K-Means maintained relatively low
-runtime as the dataset increased from 500 to 20,000 samples.
-
-Ward linkage experienced a substantial increase in runtime,
-reaching approximately 0.93 seconds at 5,000 samples.
-Single linkage was faster than Ward at the tested sizes,
-although its runtime also increased as the dataset grew.
-
-These preliminary results suggest that K-Means is more
-computationally scalable for this dataset.
-
-\subsubsection{Clustering Quality Results}
-
-Table~\ref{tab:size-quality} summarizes the clustering
-quality metrics across dataset sizes.
+\begin{table}[H]
+\centering
+\caption{Quality by dataset size. The five-run medians are identical for all
+methods that were run.}
+\label{tab:size-quality}
+\gentable[0.6\linewidth]{size_quality.tex}
+\end{table}
 
 \begin{table}[H]
 \centering
-\caption{Clustering quality by dataset size.}
-\label{tab:size-quality}
-\begin{tabular}{rrrrrr}
-\toprule
-\textbf{Samples}
-& \multicolumn{3}{c}{\textbf{ARI}}
-& \multicolumn{2}{c}{\textbf{Silhouette}} \\
-\cmidrule(lr){2-4}
-\cmidrule(lr){5-6}
-& \textbf{K-Means}
-& \textbf{Ward}
-& \textbf{Single}
-& \textbf{K-Means}
-& \textbf{All} \\
-\midrule
-500    & 1.0000 & 1.0000 & 1.0000 & 0.8908 & 0.8908 \\
-1,000  & 1.0000 & 1.0000 & 1.0000 & 0.8905 & 0.8905 \\
-2,500  & 1.0000 & 1.0000 & 1.0000 & 0.8895 & 0.8895 \\
-5,000  & 1.0000 & 1.0000 & 1.0000 & 0.8875 & 0.8875 \\
-10,000 & 1.0000 & -- & -- & 0.8888 & 0.8888 \\
-20,000 & 1.0000 & -- & -- & 0.8906 & 0.8906 \\
-\bottomrule
-\end{tabular}
+\caption{Fitted runtime exponent: slope of $\log(\text{runtime})$ against
+$\log n$. A slope of 2 means runtime $\propto n^2$.}
+\label{tab:exponents}
+\gentable[0.5\linewidth]{size_exponents.tex}
 \end{table}
+
+The fitted exponents (Table~\ref{tab:exponents}) are about 1.9--2.1 for all
+three linkages, matching the quadratic cost of working with all pairwise
+distances; K-Means' exponent is about zero. Its runtime does not grow over this
+range because the fixed cost of 10 restarts (and thread start-up) dominates
+the per-iteration work; the small non-monotonic wiggles in its column are
+timing noise. The crossover is between $n=1000$ and $n=2500$: below it Ward is
+3--15$\times$ \emph{faster} than K-Means, above it slower, reaching $5.3\times$
+slower at $n=5000$. Single linkage is the cheapest hierarchical method
+(0.24\,s at 5{,}000) but still grows quadratically.
+
+\subsection{Cluster Shape}
+\label{sec:shape}
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=\textwidth]
-    {../results/figures/quality_vs_size.png}
-    \caption{ARI and Silhouette Score as the number of
-    samples increases. The hierarchical results overlap
-    with the K-Means results at the tested sizes.}
-    \label{fig:quality}
+    \includegraphics[width=\textwidth]{../results/figures/cluster_shape_comparison.png}
+    \caption{True labels and the predictions of each method on four shapes
+    ($n=1000$).}
+    \label{fig:shape}
 \end{figure}
 
-All three algorithms achieved an ARI of 1.0 across the
-tested sizes. Silhouette scores remained close to 0.89,
-indicating that clustering quality remained stable as
-the dataset increased.
+\begin{table}[H]
+\centering
+\caption{ARI and Silhouette on the shape datasets; best in bold.}
+\label{tab:shape}
+\gentable{shape.tex}
+\end{table}
 
-This suggests that all three methods can successfully
-identify the well-separated Gaussian clusters, even as
-the number of samples increases.
+On the two convex datasets all methods are perfect. (Our ``anisotropic'' blobs
+are a mild shear of the baseline and remain well separated, so this case
+does not discriminate between methods; see Limitations.) On \textbf{two
+moons} and \textbf{concentric circles}, K-Means and Ward cut the plane with a
+straight boundary and score $\mathrm{ARI}\le 0.26$ and $\le 0.01$; Average is
+only slightly better (0.36 and 0.11); \textbf{Single linkage recovers both
+perfectly} (ARI\,=\,1). It can do so because it merges by nearest neighbours
+and so follows a connected curve, whereas centroid-based methods cannot
+represent a ring around another ring.
+
+\subsection{Comparison Across Dataset Characteristics}
+
+Table~\ref{tab:chars} gives the results on the five datasets of
+Figure~\ref{fig:datasets} (one seed, $n=1000$).
+
+\begin{table}[H]
+\centering
+\caption{Quality on the five characteristic datasets; best in bold.}
+\label{tab:chars}
+\gentable{characteristics.tex}
+\end{table}
+
+Beyond the shape findings above: on \textbf{overlapping blobs} ($d/\sigma\approx 2.2$) K-Means is best
+(ARI 0.60) and Ward close behind (0.52), while Average and Single put almost
+everything in one cluster (ARI\,=\,0). On \textbf{varying-size blobs} Ward and
+Average (0.99) edge out K-Means (0.93), whose equal-variance assumption pulls the
+boundary towards the large, diffuse cluster; Single linkage fails (ARI $\approx0$).
+
+\subsection{Cluster Separation}
+\label{sec:separation}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{../results/figures/separation_comparison.png}
+    \caption{ARI (left) and Silhouette (right) against separation ratio,
+    mean $\pm$ 1 standard deviation over 10 datasets per level. The grey
+    dotted line is the oracle ceiling.}
+    \label{fig:separation}
+\end{figure}
+
+\begin{table}[H]
+\centering
+\caption{Mean ARI over 10 seeds (best in bold). Std is $\sigma$; $d/\sigma$ is
+the separation ratio. The oracle's ARI is 1.000, 0.999, 0.993, 0.956, 0.881,
+0.686, 0.519, 0.387, 0.230, 0.156 at the same levels.}
+\label{tab:sep-ari}
+\gentable[0.72\linewidth]{separation_ari.tex}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{Where each method starts to fail (first level, scanning from well
+separated to overlapping).}
+\label{tab:sep-fail}
+\gentable[0.85\linewidth]{separation_thresholds.tex}
+\end{table}
+
+Figure~\ref{fig:sep-examples} shows the data behind these numbers.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{../results/figures/separation_examples.png}
+    \caption{Examples at four overlap levels (rows) with true labels and each
+    method's clustering (columns).}
+    \label{fig:sep-examples}
+\end{figure}
+
+\paragraph{Findings.}
+\begin{itemize}
+    \item \textbf{Single linkage fails first and not gracefully.} It is
+    perfect at $d/\sigma=12$, about 0.96 at 8, and then collapses to ARI
+    $\approx 0$ from $d/\sigma\le 6$, when the clusters are still visibly
+    separate. At $\sigma=1.5$ it returns clusters of size 998, 1 and 1: the
+    random tails of the Gaussians produce isolated points; Single linkage
+    merges the closest pair of clusters each time, so an isolated point is
+    absorbed last, and cutting the tree at $k=3$ peels off the most isolated
+    points instead of splitting the groups.
+    \item \textbf{Average linkage} holds on until $d/\sigma\approx 6$ and fails
+    (relative rule) at 4; from $d/\sigma=2$ downwards it returns one dominant
+    cluster (ARI $\approx0$).
+    \item \textbf{Ward} degrades smoothly and tracks K-Means closely, but is
+    consistently a little lower (relative failure at $d/\sigma=3$).
+    \item \textbf{K-Means stays on the oracle ceiling} at every level
+    (e.g.\ 0.878 vs.\ 0.881 at $d/\sigma=4$, 0.148 vs.\ 0.156 at 1.2). Its
+    absolute ``failure'' at $d/\sigma\approx4$ is therefore a property of the
+    \emph{data}, not of the algorithm: no method can score above the oracle,
+    and the oracle itself falls below 0.9 there. This is expected, since this
+    experiment's data are exactly the equal-variance spherical Gaussians that
+    K-Means assumes; it would not hold for the shapes in Section~\ref{sec:shape}.
+    \item \textbf{Variability:} Average linkage's spread across seeds is much
+    wider than K-Means' (shaded bands), i.e.\ it is also the less
+    \emph{reliable} method near its breaking point.
+\end{itemize}
 
 % ==================================================
 \section{Discussion}
+\label{sec:discussion}
 % ==================================================
 
-The preliminary experiments illustrate the importance of
-considering both dataset structure and computational cost
-when selecting a clustering algorithm.
+\paragraph{Hypotheses.} H1 and H3 hold for $n\geq 2500$: hierarchical
+runtime grows as $n^2$ and needs an $O(n^2)$ distance matrix, so it cannot be
+run on the largest sizes at all, while K-Means' cost is flat. H1 needs one
+refinement: at small $n$, K-Means is \emph{slower} (0.10\,s vs.\ 0.003--0.03\,s
+at $n=500$--$1000$) because its cost is dominated by restarts, so
+``K-Means is faster'' is a statement about large $n$. H2 holds only for
+Single linkage, the only method whose merge rule follows connected structure.
 
-K-Means performed well on compact, well-separated clusters
-and maintained relatively low runtime as dataset size increased.
+\paragraph{The linkage matters more than the family.} Treating
+hierarchical clustering as one method would hide the main finding:
+Single linkage is the best method on non-convex shapes and the worst on
+overlapping or outlier-prone data, whereas Ward behaves like a slightly worse
+K-Means. The choice of linkage matters more than the choice between
+``K-Means'' and ``hierarchical''.
 
-However, its centroid-based approach struggled with
-non-convex structures such as Two Moons and Concentric
-Circles.
+\paragraph{The Silhouette Score is not a quality score.} Silhouette and ARI
+disagree twice. On two moons and circles, K-Means scores a \emph{higher}
+Silhouette (0.49, 0.33) than the perfect Single-linkage clustering (0.33,
+0.16), because Silhouette rewards compact, round clusters. On heavily
+overlapping data, Single linkage's Silhouette \emph{rises} to 0.38 and is
+the highest of all methods for $d/\sigma\le1.5$ while its ARI is 0, because a giant cluster plus
+isolated points looks ``well separated'' to the score. Silhouette is useful
+when labels are unavailable, but it encodes the same assumptions as K-Means
+and cannot be used to compare across clustering paradigms on its own.
 
-Single linkage was particularly effective on these irregular
-shapes, achieving perfect ARI on both datasets. However,
-it performed poorly on the overlapping and varying-size
-datasets.
-
-Ward linkage generally produced compact clusters and
-performed competitively with K-Means on Gaussian and
-varying-size blobs.
-
-An important observation is that Silhouette Score and ARI
-do not always agree. For example, on Two Moons and
-Concentric Circles, K-Means achieved higher Silhouette
-Scores than Single linkage despite having substantially
-lower ARI.
-
-This demonstrates that a metric favoring compact,
-well-separated clusters does not necessarily reward
-recovery of the underlying non-convex structure.
+\paragraph{Practical guidance.}
+\begin{center}
+\small
+\begin{tabular}{p{0.38\linewidth}p{0.5\linewidth}}
+\toprule
+\textbf{Situation} & \textbf{Reasonable choice} \\
+\midrule
+Large $n$ (thousands and up), compact clusters & K-Means \\
+Small $n$, want a full dendrogram or no restarts & Ward (or Average) \\
+Non-convex, clearly separated, little noise & Single linkage \\
+Noisy or overlapping clusters & K-Means / Ward; avoid Single \\
+Very different cluster sizes or densities & Ward (K-Means second) \\
+\bottomrule
+\end{tabular}
+\end{center}
 
 \subsection{Limitations}
 
-The current experiments have several limitations:
-
 \begin{itemize}
-
-    \item The datasets are synthetic and may not represent
-    the complexity of real-world data.
-
-    \item The dataset-size experiment uses Gaussian blobs,
-    so its scalability findings should not automatically
-    be generalized to other cluster structures.
-
-    \item Hierarchical clustering was capped at 5,000
-    samples due to memory considerations. Therefore,
-    its runtime at larger dataset sizes was not measured.
-
-    \item Silhouette Scores for datasets larger than
-    2,000 samples are estimated using a reproducible
-    sample rather than every data point.
-
-    \item Runtime measurements can vary with hardware,
-    system activity, and implementation details.
-
+    \item \textbf{Synthetic, 2-D data} with $k$ given to every method. Real
+    data are higher-dimensional and $k$ is unknown; distances behave
+    differently in high dimension.
+    \item \textbf{Seeds:} the size, shape and characteristics experiments
+    use one dataset (seed 42); only the separation experiment averages
+    over 10 seeds. Single-seed ARIs, especially on overlapping data, are noisy.
+    \item \textbf{Separation setup:} three equal, spherical clusters, which
+    matches K-Means' assumptions and therefore flatters it; the oracle is also
+    only optimal under that model.
+    \item \textbf{Anisotropic blobs} are not elongated enough to be hard, so
+    they do not yet test K-Means' weakness on stretched clusters.
+    \item \textbf{Timing:} one machine, no warm-up run, K-Means timings
+    are dominated by fixed overhead at these sizes, and memory was calculated
+    rather than measured. Hierarchical methods were not run above 5{,}000
+    points, so ``$\approx n^2$'' is extrapolated from three to four points.
+    \item \textbf{Failure thresholds} (0.9) are conventions; the
+    ordering of methods does not depend on them, but the exact $d/\sigma$ does.
 \end{itemize}
 
 % ==================================================
 \section{Conclusion}
 % ==================================================
 
-This project compares K-Means and two forms of
-Agglomerative Hierarchical Clustering across different
-synthetic dataset structures and sizes.
+K-Means and hierarchical clustering are not rivals on a single axis: they
+trade off cost against the structure they can recover. K-Means is the
+efficient, robust default for compact clusters, and on spherical Gaussians
+it matches the best possible score even as the clusters overlap. Hierarchical
+clustering is more flexible, but its quadratic time and memory restrict it to
+moderate $n$, and its quality depends on the linkage: Single linkage uniquely
+recovers non-convex shapes but is brittle to noise and overlap; Ward is a
+stable K-Means substitute; Average sits between. Finally, quality metrics must
+be chosen with care, since Silhouette can reward exactly the clusterings that
+ARI shows to be wrong.
 
-Our preliminary findings suggest that algorithm performance
-depends heavily on the underlying data distribution.
-
-K-Means is computationally efficient and performs well on
-compact, well-separated clusters. Single linkage can recover
-irregular cluster structures that K-Means struggles with,
-while Ward linkage provides competitive results on several
-compact and varying-size datasets.
-
-The dataset-size experiment also suggests that K-Means
-maintains better computational scalability than the
-hierarchical approaches tested.
-
-Overall, the experiments demonstrate that clustering
-algorithm selection involves a trade-off between
-computational efficiency and the ability to recover
-different types of cluster structures.
+\paragraph{Future work.} Strengthen the shape study (stronger anisotropy,
+several seeds, noise added to moons and circles); add density-based
+(DBSCAN) and spectral clustering, which target the shapes where K-Means
+fails; measure memory directly and try hierarchical clustering above
+5{,}000 points; and test higher dimensions and unknown $k$.
 
 % ==================================================
-\section{Future Work}
+\section*{Group Contributions}
 % ==================================================
-
-The following work can further strengthen the project:
 
 \begin{itemize}
-
-    \item Repeat runtime experiments with warm-up runs
-    and additional repetitions.
-
-    \item Investigate the effect of cluster separation
-    and density more systematically.
-
-    \item Explore larger datasets for hierarchical
-    clustering where computational resources permit.
-
-    \item Investigate additional clustering approaches
-    for comparison, if the project scope allows.
-
-    \item Incorporate feedback from the class presentation
-    into the final report.
-
+    \item \textbf{Fay Lee:} Part 1 -- shared experiment harness
+    (\texttt{common.py}), dataset-size experiment and plots, methodology and
+    technologies sections, size results.
+    \item \textbf{Elizabeth Lam:} Part 2 -- shape datasets, shape experiment
+    and side-by-side visualizations, shape results.
+    \item \textbf{Iaroslav Volkov:} Part 3 -- cluster-separation experiment
+    and plots, report assembly (introduction, hypotheses, discussion,
+    conclusion), README and \texttt{results/} organization.
 \end{itemize}
 
-% ==================================================
-\section{Group Contributions}
-% ==================================================
-
-The project is a collaborative effort. The following
-section will be completed by the group before submission.
-
-\begin{itemize}
-
-    \item \textbf{Iaroslav Volkov:}
-    [Describe contributions.]
-
-    \item \textbf{Elizabeth Lam:}
-    [Describe contributions.]
-
-    \item \textbf{Fay Lee:}
-    [Describe contributions.]
-
-\end{itemize}
-
-All group members contributed to the project through
-[add details about collaboration, experimentation,
-analysis, and report preparation].
+\noindent\textit{[Group: please confirm or edit this section before submission.]}
 
 % ==================================================
-\section{Use of Generative AI}
+\section*{Use of Generative AI}
 % ==================================================
 
-[Describe the use of generative AI tools in accordance
-with the course requirements. Include the tools used,
-their contributions, and how the group reviewed and
-validated the resulting work.]
+An AI coding assistant (Anthropic's Claude, via Claude Code) was used to
+implement the separation experiment and its oracle baseline, to generate the
+report tables from the result files, and to draft this report and the
+presentation slides from the experimental results. All numbers in this
+document are read directly from the result CSVs produced by the code in this
+repository. \textit{[Group: describe how the draft was reviewed and what was
+rewritten before submission, as the course requires.]}
 
-% ==================================================
-\section{References}
-% ==================================================
-
-% Add sources for:
-% - K-Means
-% - Agglomerative Hierarchical Clustering
-% - Ward linkage
-% - Single linkage
-% - Silhouette Score
-% - Adjusted Rand Index
-% - Scikit-learn implementation
-
-\begin{thebibliography}{9}
-
-\bibitem{placeholder}
-[Add bibliographic references here.]
-
-\end{thebibliography}
+\bibliographystyle{plain}
+\bibliography{references}
 
 \end{document}

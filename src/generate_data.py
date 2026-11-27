@@ -148,6 +148,56 @@ def generate_varying_size_blobs(
 
     return X, y
 
+# Cluster-separation sweep (Part 3)
+#
+# Three equal-size Gaussian clusters whose centres sit at the corners of an
+# equilateral triangle. The centre distance is held fixed while the common
+# within-cluster standard deviation grows, so the separation ratio
+# (centre distance / standard deviation) falls from well separated to heavily
+# overlapping. Scaling the distance instead of the spread gives an identical
+# geometry, so one sweep covers both "vary cluster_std" and "vary distance".
+SEPARATION_CENTER_DISTANCE = 6.0
+SEPARATION_STDS = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0]
+
+
+def separation_centers(center_distance=SEPARATION_CENTER_DISTANCE):
+    """Return the three cluster centres used by generate_separated_blobs."""
+
+    height = center_distance * np.sqrt(3) / 2
+    return np.array([
+        (0.0, 0.0),
+        (center_distance, 0.0),
+        (center_distance / 2, height),
+    ])
+
+
+def generate_separated_blobs(
+    cluster_std,
+    n_samples=DEFAULT_SAMPLES,
+    random_state=RANDOM_STATE,
+    center_distance=SEPARATION_CENTER_DISTANCE
+):
+    """
+    Generate three Gaussian clusters with a controllable amount of overlap.
+
+    Parameters:
+        cluster_std: Within-cluster standard deviation (the same for
+            every cluster). Larger values mean more overlap.
+        center_distance: Distance between every pair of cluster centres.
+
+    The separation ratio is center_distance / cluster_std.
+    """
+
+    X, y = make_blobs(
+        n_samples=n_samples,
+        centers=separation_centers(center_distance),
+        cluster_std=cluster_std,
+        random_state=random_state
+    )
+
+    return X, y
+
+
 # Generate All Datasets
 def generate_all_datasets(
     n_samples=DEFAULT_SAMPLES,

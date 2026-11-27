@@ -83,33 +83,50 @@ Experiments use fixed random seeds to support reproducibility. Runtime measureme
 
 ## Results and Findings
 
-The experiments evaluate algorithm performance across dataset size, cluster shape, and cluster separation.
+All numbers below come from the CSV files in `results/tables/`. See
+`report/main.pdf` for the full write-up.
 
 ### Dataset Size
 
-The scalability experiment examines how runtime and clustering quality change as the number of samples increases.
-
-Preliminary findings suggest that K-Means maintains relatively low runtime as dataset size increases, while hierarchical clustering experiences greater computational costs.
+K-Means runtime is essentially flat from 500 to 20,000 points (~0.1 s, dominated
+by the fixed cost of its 10 restarts). Hierarchical runtime grows roughly as
+n² (fitted exponents 1.9 to 2.1): at 5,000 points K-Means takes 0.13 s versus
+0.70 s (Ward) and 0.80 s (Average). Below ~1,000 points the hierarchical
+methods are actually faster. All methods reach ARI = 1 on these easy blobs, so
+size affects cost, not quality. Hierarchical clustering is capped at 5,000
+points (its distance matrix is ~100 MB there, ~1.6 GB at 20,000).
 
 ### Cluster Shape
 
-The shape experiments investigate the limitations of centroid-based and hierarchical approaches.
-
-Initial results suggest that Single linkage can identify non-convex structures such as two moons and concentric circles, where K-Means and Ward linkage struggle.
-
-Ward linkage performs competitively on compact and varying-size datasets, while Single linkage may be less effective on overlapping or differently sized clusters.
+Single linkage recovers two moons and concentric circles perfectly (ARI = 1.00).
+K-Means, Ward and Average score between -0.001 and 0.36 on these shapes. On
+convex blobs all methods are perfect. Ward and Average edge out K-Means on
+varying-size blobs; Single linkage fails on overlapping and varying-size blobs.
 
 ### Cluster Separation
 
-The separation experiments investigate how clustering quality changes as clusters become less distinct.
+Three Gaussian clusters, centre distance d = 6, spread sigma from 0.5 to 5
+(separation ratio d/sigma from 12 down to 1.2), 10 random datasets per level.
+An **oracle** (assign each point to its nearest true centre) shows the best ARI
+any method could reach at each overlap.
 
-ARI and Silhouette Score trends are used to identify when each algorithm begins to misclassify points or produce less well-defined clusters.
+| Method | Starts to fail (ARI < 0.9 x oracle) |
+|---|---|
+| Single | d/sigma = 6 (collapses to ARI ~ 0, peeling off outliers) |
+| Average | d/sigma = 4 |
+| Ward | d/sigma = 3 |
+| K-Means | never: it tracks the oracle at every level |
+
+K-Means' low ARI at heavy overlap is the data's ambiguity, not an algorithm
+failure. (This setup matches K-Means' own assumptions, so it is its home turf.)
 
 ### Overall Findings
 
-The combined experiments highlight the trade-offs between computational efficiency and clustering quality.
-
-Rather than identifying one universally superior algorithm, the project investigates which approaches are most suitable under different data conditions.
+No algorithm wins everywhere. K-Means is the efficient, robust default for
+compact clusters; Ward behaves like a slightly worse K-Means; Single linkage is
+the only method that follows non-convex shapes but is brittle to noise and
+overlap. The Silhouette Score can disagree with ARI (it rewards round, compact
+clusters), so it should not be used alone to compare different algorithms.
 
 ## Technologies
 
@@ -119,6 +136,7 @@ Rather than identifying one universally superior algorithm, the project investig
 - **Scikit-learn:** Clustering algorithms, synthetic datasets, and evaluation metrics
 - **Matplotlib:** Data visualizations
 - **SciPy:** Scientific computing
+- **python-pptx:** Builds the presentation slides
 - **LaTeX:** Project report preparation
 
 ## Repository Structure
@@ -126,34 +144,43 @@ Rather than identifying one universally superior algorithm, the project investig
 ```text
 csi4103_Final-Project/
 ├── data/
-│   └── README.md
-├── notebooks/
+│   └── README.md                     (all data is synthetic, generated on the fly)
 ├── report/
-│   ├── main.tex
-│   └── references.bib
+│   ├── main.tex                      LaTeX report
+│   ├── references.bib
+│   ├── main.pdf                      compiled report
+│   └── generated/                    LaTeX tables generated from results/tables/
 ├── results/
 │   ├── figures/
 │   │   ├── dataset_overview.png
 │   │   ├── runtime_vs_size.png
 │   │   ├── quality_vs_size.png
 │   │   ├── cluster_shape_comparison.png
-│   │   └── separation_comparison.png
+│   │   ├── separation_comparison.png
+│   │   └── separation_examples.png
 │   └── tables/
-│       ├── clustering_results.csv
+│       ├── clustering_results.csv    dataset characteristics
 │       ├── dataset_size_results.csv
-│       ├── separation_results.csv
-│       └── cluster_shape_results.csv
+│       ├── cluster_shape_results.csv
+│       ├── separation_results.csv    raw: one row per (sigma, seed, method)
+│       ├── separation_summary.csv    mean / std per (sigma, method)
+│       └── separation_thresholds.csv failure point of each method
+├── slides/
+│   ├── build_slides.py               builds the deck from results/
+│   └── K-Means_vs_Hierarchical.pptx
 └── src/
-    ├── common.py
-    ├── generate_data.py
+    ├── common.py                     shared run_experiment() harness, fixed seed
+    ├── generate_data.py              all synthetic dataset generators
     ├── kmeans.py
     ├── hierarchical.py
-    ├── evaluation.py
-    ├── run_experiments.py
+    ├── evaluation.py                 runtime, silhouette, ARI
+    ├── run_experiments.py            dataset characteristics + dataset size
+    ├── run_size_experiments.py       dataset size only
     ├── plot_size_results.py
     ├── run_shape_experiments.py
     ├── run_separation_experiments.py
-    └── plot_separation_results.py
+    ├── plot_separation_results.py
+    └── make_report_tables.py         CSV -> LaTeX tables for the report
 ```
 
 ## Running the Experiments
@@ -191,13 +218,13 @@ python src/generate_data.py
 
 ### 5. Run the Experiments
 
-Dataset characteristics:
+Dataset characteristics (and dataset size):
 
 ```bash
 python src/run_experiments.py
 ```
 
-Dataset size:
+Dataset size only:
 
 ```bash
 python src/run_size_experiments.py
@@ -208,16 +235,20 @@ Cluster shape:
 ```bash
 python src/run_shape_experiments.py
 ```
-This command generates both Part 2 outputs:
 
-- `results/figures/cluster_shape_comparison.png` compares ground-truth labels, K-Means, and hierarchical clustering with Single, Ward, and Average linkage.
-- `results/tables/cluster_shape_results.csv` contains ARI and silhouette scores for each shape and method.
+This generates `results/figures/cluster_shape_comparison.png` (ground truth vs.
+K-Means vs. Single, Ward and Average linkage) and
+`results/tables/cluster_shape_results.csv` (ARI and silhouette per shape and method).
 
 Cluster separation:
 
 ```bash
 python src/run_separation_experiments.py
 ```
+
+This writes `results/tables/separation_results.csv` and
+`results/figures/separation_examples.png`. It runs 4 methods x 10 separation
+levels x 10 seeds and takes about a minute.
 
 ### 6. Generate Visualizations
 
@@ -226,7 +257,22 @@ python src/plot_size_results.py
 python src/plot_separation_results.py
 ```
 
-Experimental tables and figures are generated in the `results/` directory.
+`plot_separation_results.py` also writes `separation_summary.csv` and
+`separation_thresholds.csv` (where each method starts to fail).
+
+### 7. Build the Report and Slides
+
+```bash
+python src/make_report_tables.py          # CSV -> report/generated/*.tex
+cd report && latexmk -pdf main.tex        # -> report/main.pdf
+cd .. && python slides/build_slides.py    # -> slides/K-Means_vs_Hierarchical.pptx
+```
+
+Note: the plotting scripts call `plt.show()`, which opens a window. On a
+machine without a display, run them with `MPLBACKEND=Agg`.
+
+Runtimes depend on your machine, so re-running will change the runtime columns
+slightly; ARI and silhouette are reproducible (fixed seeds).
 
 ## Authors
 

@@ -1,0 +1,17 @@
+shape,method,ari,silhouette
+Gaussian blobs,K-Means,1.0,0.8905341786277807
+Gaussian blobs,Hierarchical (single),1.0,0.8905341786277807
+Gaussian blobs,Hierarchical (ward),1.0,0.8905341786277807
+Gaussian blobs,Hierarchical (average),1.0,0.8905341786277807
+Anisotropic blobs,K-Means,1.0,0.8759811851068534
+Anisotropic blobs,Hierarchical (single),1.0,0.8759811851068534
+Anisotropic blobs,Hierarchical (ward),1.0,0.8759811851068534
+Anisotropic blobs,Hierarchical (average),1.0,0.8759811851068534
+Two moons,K-Means,0.24327888802907635,0.4851699320284609
+Two moons,Hierarchical (single),1.0,0.32997168520830433
+Two moons,Hierarchical (ward),0.255295562517673,0.48369343334239434
+Two moons,Hierarchical (average),0.35706442581215536,0.4405861497697066
+Concentric circles,K-Means,-0.000985731210072956,0.32802957535197624
+Concentric circles,Hierarchical (single),1.0,0.15518946292447422
+Concentric circles,Hierarchical (ward),0.010343026271524782,0.2643072822980878
+Concentric circles,Hierarchical (average),0.10578751830594595,0.29353165984132695

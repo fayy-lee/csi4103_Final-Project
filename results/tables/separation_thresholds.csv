@@ -1,0 +1,5 @@
+algorithm,abs_fails_at_std,abs_fails_at_ratio,abs_ari_at_failure,rel_fails_at_std,rel_fails_at_ratio,rel_ari_at_failure
+Hierarchical (Average),1.25,4.8,0.8799480173656409,1.5,4.0,0.7316427726624545
+Hierarchical (Single),1.0,6.0,0.05672550206561633,1.0,6.0,0.05672550206561633
+Hierarchical (Ward),1.5,4.0,0.82968148637872,2.0,3.0,0.6077468813918978
+K-Means,1.5,4.0,0.877841883831827,,,

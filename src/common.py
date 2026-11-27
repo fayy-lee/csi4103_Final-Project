@@ -17,7 +17,7 @@ def run_experiment(dataset, algorithm):
 
     Parameters:
         dataset: Tuple containing (X, true_labels)
-        algorithm: "kmeans", "ward", or "single"
+        algorithm: "kmeans", "ward", "single", or "average"
 
     Returns:
         Dictionary containing runtime, silhouette, and ARI.
@@ -48,6 +48,13 @@ def run_experiment(dataset, algorithm):
             X,
             n_clusters=n_clusters,
             linkage="single"
+        )
+
+    elif algorithm == "average":
+        model = fit_hierarchical(
+            X,
+            n_clusters=n_clusters,
+            linkage="average"
         )
 
     else:

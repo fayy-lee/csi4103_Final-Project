@@ -70,6 +70,12 @@ def get_algorithms():
             linkage="ward"
         ),
 
+        "Hierarchical (Average)": lambda X, k: fit_hierarchical(
+            X,
+            n_clusters=k,
+            linkage="average"
+        ),
+
         "Hierarchical (Single)": lambda X, k: fit_hierarchical(
             X,
             n_clusters=k,
@@ -158,6 +164,7 @@ def run_size_experiment():
     algorithms = {
         "K-Means": "kmeans",
         "Hierarchical (Ward)": "ward",
+        "Hierarchical (Average)": "average",
         "Hierarchical (Single)": "single"
     }
 
